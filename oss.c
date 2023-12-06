@@ -53,6 +53,7 @@ struct PCB {
         int isWaiting;
         int eventSec;
         int eventNano;
+        int eventPage;
         int pageTable[32];
 };
 
@@ -178,6 +179,7 @@ int main(int argc, char** argv) {
         for (int y = 0; y < 30; y++){
                 processTable[y].occupied = 0;
                 processTable[y].isWaiting = 0;
+                processTable[y].eventPage = -1;
                 for(int x = 0; x < 32; x++){
                 processTable[y].pageTable[x] = -1;
                 }
@@ -304,12 +306,52 @@ int main(int argc, char** argv) {
                                         }
                                         if(framesFiled == 256){
                                                 //give the firstoutframe to the process
+                                                for(int z = 0; z < 256; z++){
+                                                        if(frameTable[z].assigned == firstOutFrame){
+                                                                frameTable[z].processNum = x;
+                                                                frameTable[z].page = processTable[x].eventPage;
+                                                                frameTable[z].dirtyBit = ??;
+                                                                frameTable[z].assigned = fifoCounter;
+                                                                fifoCounter++;
+                                                                processTable[x].eventSec = 0;
+                                                                processTable[x].eventNano = 0;
+                                                                processTable[x].isWaiting = 0;
+                                                                processTable[x].eventPage = -1;
+                                                                break;
+                                                        }
+                                                }
                                                 //add appropriate value to assigned(fifoCounter)
                                                 //message back the waiting process
+                                                messenger.mtype = processTable[x].pid;
+                                                messenger.intData[0] = 1;
+                                                if (msgsnd(msqid, &messenger, sizeof(msgbuffer)-sizeof(long), 0) == -1) {
+                                                        perror("msgsnd to child 1 failed\n");
+                                                        exit(1);
+                                                }
                                         }else{
                                                 //Traverse through and give the first empty frame to process
+                                                for(int z = 0; z < 256; z++){
+                                                        if(frameTable[z].processNum == -1){
+                                                                frameTable[z].processNum = x;
+                                                                frameTable[z].page = processTable[x].eventPage;
+                                                                frameTable[z].dirtyBit = ??;
+                                                                frameTable[z].assigned = fifoCounter;
+                                                                fifoCounter++;
+                                                                processTable[x].eventSec = 0;
+                                                                processTable[x].eventNano = 0;
+                                                                processTable[x].isWaiting = 0;
+                                                                processTable[x].eventPage = -1;
+                                                                break;
+                                                        }
+                                                }
                                                 //add appropriate value to assigned(fifoCounter)
                                                 //message back the waiting process
+                                                messenger.mtype = processTable[x].pid;
+                                                messenger.intData[0] = 1;
+                                                if (msgsnd(msqid, &messenger, sizeof(msgbuffer)-sizeof(long), 0) == -1) {
+                                                        perror("msgsnd to child 1 failed\n");
+                                                        exit(1);
+                                                }
                                         }
                                 }
                         }
@@ -340,53 +382,13 @@ int main(int argc, char** argv) {
                                 return EXIT_FAILURE;
                         }
 
-                        //if a request
-                        if(receiver.intData[0] == 1){
-                                //check if request can be fufilled
-                                if(allocatedResourceArray[receiver.intData[1]] + 1 <= 20){
-                                        //if yes update resources accordingly and stat keeping variable and send message back
-                                        allocatedResourceArray[receiver.intData[1]]++;
-                                        allocationMatrix[selected][receiver.intData[1]]++;
-                                        grantedNow++;
-                                        messenger.mtype = processTable[selected].pid;
-                                        messenger.intData[0] = 1;
-                                        if (msgsnd(msqid, &messenger, sizeof(msgbuffer)-sizeof(long), 0) == -1) {
-                                                perror("msgsnd to child 1 failed\n");
-                                                exit(1);
-                                        }
-                                        if(verbose != 1){
-                                        printf("Master has detected Process P%d has requested R%d at time %d:%d and is granting the request\n", selected,receiver.intData[1],sharedTime[0],sharedTime[1]);
-                                        fprintf(file,"Master has detected Process P%d has requested R%d at time %d:%d and is granting the request\n", selected,receiver.intData[1],sharedTime[0],sharedTime[1]);
-                                        }
-                                }else{
-                                        //if no update request matrix
-                                        requestMatrix[selected][receiver.intData[1]]++;
-                                        if(requestMatrix[selected][receiver.intData[1]]==2){
-                                                printf("Error...\n");
-                                                return EXIT_FAILURE;
-                                        }
-                                        processTable[selected].isWaiting = 1;
-                                        if(verbose != 1){
-                                        printf("Master has detected Process P%d has requested R%d at time %d:%d and is not granting the request\n", selected,receiver.intData[1],sharedTime[0],sharedTime[1]);
-                                        fprintf(file,"Master has detected Process P%d has requested R%d at time %d:%d and is not granting the request\n", selected,receiver.intData[1],sharedTime[0],sharedTime[1]);
-                                        }
-                                }
+                        //if a write
+                        if(receiver.intData[0] > 0){
+                                
                         }
-                        //if a release
-                        if(receiver.intData[0] == -1){
-                                //release resources accordingly and update stat keeping variable and message back
-                                allocatedResourceArray[receiver.intData[1]]--;
-                                allocationMatrix[selected][receiver.intData[1]]--;
-                                messenger.mtype = processTable[selected].pid;
-                                messenger.intData[0] = 1;
-                                if (msgsnd(msqid, &messenger, sizeof(msgbuffer)-sizeof(long), 0) == -1) {
-                                        perror("msgsnd to child 1 failed\n");
-                                        exit(1);
-                                }
-                                if(verbose != 1){
-                                printf("Master has detected Process P%d has released 1 of R%d at time %d:%d\n", selected,receiver.intData[1],sharedTime[0],sharedTime[1]);
-                                fprintf(file,"Master has detected Process P%d has released 1 of R%d at time %d:%d\n", selected,receiver.intData[1],sharedTime[0],sharedTime[1]);
-                                }
+                        //if a read
+                        if(receiver.intData[0] < 0){
+                               
                         }
                 }
 

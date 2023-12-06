@@ -188,7 +188,7 @@ int main(int argc, char** argv) {
         for(int c = 0; c < 256; c++){
                 frameTable[c].processNum = -1;
                 frameTable[c].page = -1;
-                frameTable[c].dirtyBit = -1;//May need editing
+                frameTable[c].dirtyBit = 0;
                 frameTable[c].assigned = -1;
         }
 
@@ -206,6 +206,9 @@ int main(int argc, char** argv) {
         int framesFilled = 0;
         int firstOutFrame = -1;
         int fifoCounter = 0;
+        int selected;
+        int pageIndex = 0;
+        int isPagePresent = 0;
 
         while(1){
                 seed++;
@@ -296,6 +299,7 @@ int main(int argc, char** argv) {
                 for(int x = 0; x < totalLaunched; x++){
                         if(processTable[x].isWaiting == 1){
                                 if((processTable[x].eventSec < sharedTime[0]) || (processTable[x].eventSec == sharedTime[0] && processTable[x].eventNano <= sharedTime[1])){
+                                        framesFilled = 0;
                                         for(int y = 0; y < 256; y++){
                                                 if(frameTable[y].processNum != -1){
                                                         framesFilled++;
@@ -308,9 +312,13 @@ int main(int argc, char** argv) {
                                                 //give the firstoutframe to the process
                                                 for(int z = 0; z < 256; z++){
                                                         if(frameTable[z].assigned == firstOutFrame){
+                                                                processTable[frameTable[z].processNum].pageTable[frameTable[z].page] = -1;
+                                                                if(frameTable[z].dirtyBit == 1){
+                                                                        //add extra time
+                                                                }
                                                                 frameTable[z].processNum = x;
                                                                 frameTable[z].page = processTable[x].eventPage;
-                                                                frameTable[z].dirtyBit = ??;
+                                                                frameTable[z].dirtyBit = 0;
                                                                 frameTable[z].assigned = fifoCounter;
                                                                 fifoCounter++;
                                                                 processTable[x].eventSec = 0;
@@ -334,7 +342,7 @@ int main(int argc, char** argv) {
                                                         if(frameTable[z].processNum == -1){
                                                                 frameTable[z].processNum = x;
                                                                 frameTable[z].page = processTable[x].eventPage;
-                                                                frameTable[z].dirtyBit = ??;
+                                                                frameTable[z].dirtyBit = 0;
                                                                 frameTable[z].assigned = fifoCounter;
                                                                 fifoCounter++;
                                                                 processTable[x].eventSec = 0;
@@ -382,13 +390,34 @@ int main(int argc, char** argv) {
                                 return EXIT_FAILURE;
                         }
 
-                        //if a write
-                        if(receiver.intData[0] > 0){
-                                
+                        //get page index from given value
+                        pageIndex = receiver.intData[1] / 1024;
+                        if(processTable[selected].pageTable[pageIndex] != -1){
+                                isPagePresent = 1;
+                        }else{
+                                isPagePresent = 0;
                         }
+                        
+                        //find out if frameTable is full
+                        framesFilled = 0;
+                        for(int y = 0; y < 256; y++){
+                                if(frameTable[y].processNum != -1){
+                                        framesFilled++;
+                                }
+                                if(frameTable[y].assigned > -1 && frameTable[y].assigned < firstOutFrame){
+                                        firstOutFrame = frameTable[y].assigned;
+                                }
+                        }
+                        
+                        //if a write
+                        if(receiver.intData[0] == 1){
+                                //make dirtybit 1
                         //if a read
-                        if(receiver.intData[0] < 0){
+                        }else if(receiver.intData[0] == 0){
                                
+                        }else{
+                                printf("Something weird was given by process %d\n", selected);
+                                return EXIT_FAILURE;
                         }
                 }
 

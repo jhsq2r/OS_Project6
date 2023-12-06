@@ -47,7 +47,9 @@ int main(int argc, char** argv){
 
         while (1){
                 if(numMemReferences % 1000 == 0){
-                        //chance to end??
+                        if((rand() % 100) < 30){
+                                break;
+                        }
                 }
                 seed++;
                 numMemReferences++;

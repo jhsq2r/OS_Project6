@@ -69,8 +69,8 @@ void displayPCB(int i, struct PCB *processTable, FILE *file){
         fprintf(file,"Process Table:\nEntry Occupied PID      StartS StartN Waiting    EventSec EventNano Frames 0-31\n");
         printf("Process Table:\nEntry Occupied PID      StartS StartN Frames 0-31\n");
         for (int x = 0; x < i; x++){
-                fprintf(file,"%d        %d      %d      %d      %d      %d        %d        %d",x,processTable[x].occupied,processTable[x].pid,processTable[x].startSeconds,processTable[x].startNano,processTable[x].isWaiting,processTable[x].eventSec,processTable[x].eventNano);
-                printf("%d      %d      %d      %d      %d      %d        %d        %d", x,processTable[x].occupied,processTable[x].pid,processTable[x].startSeconds,processTable[x].startNano,processTable[x].isWaiting,processTable[x].eventSec,processTable[x].eventNano);
+                fprintf(file,"%d        %d      %d      %d      %d      %d        %d        %d ",x,processTable[x].occupied,processTable[x].pid,processTable[x].startSeconds,processTable[x].startNano,processTable[x].isWaiting,processTable[x].eventSec,processTable[x].eventNano);
+                printf("%d      %d      %d      %d      %d      %d        %d        %d ", x,processTable[x].occupied,processTable[x].pid,processTable[x].startSeconds,processTable[x].startNano,processTable[x].isWaiting,processTable[x].eventSec,processTable[x].eventNano);
                 for(int y = 0; y < 32; y++){
                         if(y == 15){ printf("\n"); fprintf(file,"\n");}
                         printf("%3d ", processTable[x].pageTable[y]);
@@ -182,7 +182,7 @@ int main(int argc, char** argv) {
                 processTable[y].isWaiting = 0;
                 processTable[y].eventPage = -1;
                 for(int x = 0; x < 32; x++){
-                processTable[y].pageTable[x] = -1;
+                        processTable[y].pageTable[x] = -1;
                 }
         }
         struct fTable frameTable[256];
@@ -202,7 +202,6 @@ int main(int argc, char** argv) {
         nextLaunchTime[1] = 0;
         int canLaunch;
        
-        int oneSecCounter = 0;
         int halfSecCounter = 0;
         int framesFilled = 0;
         int firstOutFrame = -1;
@@ -216,7 +215,6 @@ int main(int argc, char** argv) {
                 srand(seed);
                 //printf("Looping...\n");
                 updateTime(sharedTime, 100000);//add these around
-                oneSecCounter += 100000;
                 halfSecCounter += 100000;
 
                 //check if process has terminated
@@ -233,17 +231,19 @@ int main(int argc, char** argv) {
                                                 if(frameTable[z].processNum == x){
                                                         frameTable[z].processNum = -1;
                                                         frameTable[z].page = -1;
-                                                        frameTable[z].dirtyBit = -1;//May need editing
+                                                        frameTable[z].dirtyBit = 0;//May need editing
                                                         frameTable[z].assigned = -1;
                                                 }
                                         }
-                                        if(verbose != 1){
-                                        printf("Master has detected Process P%d has terminated at time %d:%d\n", x,sharedTime[0],sharedTime[1]);
-                                        fprintf(file, "Master has detected Process P%d has terminated at time %d:%d\n", x,sharedTime[0],sharedTime[1]);
-                                        }
+                                        //if(verbose != 1){
+                                        printf("OSS has detected Process P%d has terminated at time %d:%d, freeing frames\n", x,sharedTime[0],sharedTime[1]);
+                                        fprintf(file, "OSS has detected Process P%d has terminated at time %d:%d, freeing frames\n", x,sharedTime[0],sharedTime[1]);
+                                       // }
                                 }
                         }
                 }
+                updateTime(sharedTime, 100000);
+                halfSecCounter += 100000;
                 //printf("CheckPoint 1\n");
                 //recalculate total
                 totalInSystem = 0;
@@ -295,7 +295,8 @@ int main(int argc, char** argv) {
                         totalLaunched++;
                         //sleep(1);
                 }
-
+                updateTime(sharedTime, 15000);
+                halfSecCounter += 15000;
                 //check if request can be granted
                 for(int x = 0; x < totalLaunched; x++){
                         if(processTable[x].isWaiting == 1){
@@ -313,24 +314,34 @@ int main(int argc, char** argv) {
                                                 //give the firstoutframe to the process
                                                 for(int z = 0; z < 256; z++){
                                                         if(frameTable[z].assigned == firstOutFrame){
+                                                                printf("Replacing frame %d with P%d page %d\n", z, x, processTable[x].eventPage);
                                                                 processTable[frameTable[z].processNum].pageTable[frameTable[z].page] = -1;
                                                                 if(frameTable[z].dirtyBit == 1){
                                                                         //add extra time
+                                                                        printf("Dirty bit checked in frame %d, adding extra time...\n",z);
+                                                                        updateTime(sharedTime, 200000);
+                                                                        halfSecCounter += 200000;
                                                                 }
                                                                 frameTable[z].processNum = x;
                                                                 frameTable[z].page = processTable[x].eventPage;
-                                                                frameTable[z].dirtyBit = 0;
+                                                                if(process[x].eventRorW == 1){
+                                                                        frameTable[z].dirtyBit = 1;
+                                                                }else{
+                                                                        frameTable[z].dirtyBit = 0;
+                                                                }
                                                                 frameTable[z].assigned = fifoCounter;
                                                                 fifoCounter++;
                                                                 processTable[x].eventSec = 0;
                                                                 processTable[x].eventNano = 0;
                                                                 processTable[x].isWaiting = 0;
+                                                                processTable[x].eventRorW = -1;
                                                                 processTable[x].eventPage = -1;
                                                                 break;
                                                         }
                                                 }
                                                 //add appropriate value to assigned(fifoCounter)
                                                 //message back the waiting process
+                                                printf("Indicating to P%d that request has been fufilled\n",x);
                                                 messenger.mtype = processTable[x].pid;
                                                 messenger.intData[0] = 1;
                                                 if (msgsnd(msqid, &messenger, sizeof(msgbuffer)-sizeof(long), 0) == -1) {
@@ -341,20 +352,28 @@ int main(int argc, char** argv) {
                                                 //Traverse through and give the first empty frame to process
                                                 for(int z = 0; z < 256; z++){
                                                         if(frameTable[z].processNum == -1){
+                                                                printf("Granting blocked request, filling frame %d with P%d page %d\n", z, x, processTable[x].eventPage);
                                                                 frameTable[z].processNum = x;
                                                                 frameTable[z].page = processTable[x].eventPage;
-                                                                frameTable[z].dirtyBit = 0;
+                                                                if(process[x].eventRorW == 1){
+                                                                        frameTable[z].dirtyBit = 1;
+                                                                }else{
+                                                                        frameTable[z].dirtyBit = 0;
+                                                                }
                                                                 frameTable[z].assigned = fifoCounter;
                                                                 fifoCounter++;
                                                                 processTable[x].eventSec = 0;
                                                                 processTable[x].eventNano = 0;
                                                                 processTable[x].isWaiting = 0;
                                                                 processTable[x].eventPage = -1;
+                                                                updateTime(sharedTime, 100000);
+                                                                halfSecCounter += 100000;
                                                                 break;
                                                         }
                                                 }
                                                 //add appropriate value to assigned(fifoCounter)
                                                 //message back the waiting process
+                                                printf("Indicating to P%d that request has been fufilled\n",x);
                                                 messenger.mtype = processTable[x].pid;
                                                 messenger.intData[0] = 1;
                                                 if (msgsnd(msqid, &messenger, sizeof(msgbuffer)-sizeof(long), 0) == -1) {
@@ -401,12 +420,16 @@ int main(int argc, char** argv) {
                         
                         //if a write
                         if(receiver.intData[0] == 1){
+                                printf("P%d requesting write of address %d at time %d:%d\n",selected,receiver.intData[1],sharedTime[0],sharedTime[1]);
                                 //make dirtybit 1
                                 if(isPagePresent == 1){
+                                        printf("Address %d in frame %d, writing at time %d:%d\n",receiver.intData[1],processTable[selected].pageTable[pageIndex],sharedTime[0],sharedTime[1]);
                                         frameTable[processTable[selected].pageTable[pageIndex]].dirtyBit = 1;
                                         //add some time
-                                        
+                                        updateTime(sharedTime, 10000);
+                                        halfSecCounter += 10000;
                                         //send message back
+                                        printf("Indicating to P%d that request has been fufilled\n",selected);
                                         messenger.mtype = processTable[selected].pid;
                                         messenger.intData[0] = 1;
                                         if (msgsnd(msqid, &messenger, sizeof(msgbuffer)-sizeof(long), 0) == -1) {
@@ -415,6 +438,7 @@ int main(int argc, char** argv) {
                                         }
                                 }else if(isPagePresent == 0){
                                         //blocked wait event
+                                        printf("Pagefault, adding wait event to P%d\n", selected);
                                         processTable[selected].isWaiting = 1;
                                         processTable[selected].eventPage = pageIndex;
                                         processTable[selected].eventRorW = 1;
@@ -424,13 +448,20 @@ int main(int argc, char** argv) {
                                                 processTable[selected].eventNano = processTable[selected].eventNano - 1000000000;
                                                 processTable[selected].eventSec += 1;
                                         }
+                                        updateTime(sharedTime, 10000);
+                                        halfSecCounter += 10000;
                                         
                                 }
                         //if a read
                         }else if(receiver.intData[0] == 0){
+                                printf("P%d requesting read of address %d at time %d:%d\n",selected,receiver.intData[1],sharedTime[0],sharedTime[1]);
                                 if(isPagePresent == 1){
+                                        printf("Address %d in frame %d, reading at time %d:%d\n",receiver.intData[1],processTable[selected].pageTable[pageIndex],sharedTime[0],sharedTime[1]);
                                         //add some time
+                                        updateTime(sharedTime, 10000);
+                                        halfSecCounter += 10000;
                                         //send message back
+                                        printf("Indicating to P%d that request has been fufilled\n",selected);
                                         messenger.mtype = processTable[selected].pid;
                                         messenger.intData[0] = 1;
                                         if (msgsnd(msqid, &messenger, sizeof(msgbuffer)-sizeof(long), 0) == -1) {
@@ -439,6 +470,7 @@ int main(int argc, char** argv) {
                                         }
                                 }else if(isPagePresent == 0){
                                         //blocked wait event
+                                        printf("Pagefault, adding wait event to P%d\n", selected);
                                         processTable[selected].isWaiting = 1;
                                         processTable[selected].eventPage = pageIndex;
                                         processTable[selected].eventRorW = 0;
@@ -448,6 +480,8 @@ int main(int argc, char** argv) {
                                                 processTable[selected].eventNano = processTable[selected].eventNano - 1000000000;
                                                 processTable[selected].eventSec += 1;
                                         }
+                                        updateTime(sharedTime, 10000);
+                                        halfSecCounter += 10000;
                                 }
                         }else{
                                 printf("Something weird was given by process %d\n", selected);
@@ -457,7 +491,9 @@ int main(int argc, char** argv) {
 
                 //every half second, output resource table and PCB, maybe the other matrix's too
                 if (halfSecCounter >= 500000000 && verbose != 1){
-                        
+                        displayPCB(totalLaunched,processTable,file);
+                        displayFrameTable(frameTable, file);
+                        halfSecCounter = 0;
                 }   
         }
 

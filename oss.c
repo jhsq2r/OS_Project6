@@ -54,6 +54,7 @@ struct PCB {
         int eventSec;
         int eventNano;
         int eventPage;
+        int eventRorW;
         int pageTable[32];
 };
 
@@ -398,23 +399,56 @@ int main(int argc, char** argv) {
                                 isPagePresent = 0;
                         }
                         
-                        //find out if frameTable is full
-                        framesFilled = 0;
-                        for(int y = 0; y < 256; y++){
-                                if(frameTable[y].processNum != -1){
-                                        framesFilled++;
-                                }
-                                if(frameTable[y].assigned > -1 && frameTable[y].assigned < firstOutFrame){
-                                        firstOutFrame = frameTable[y].assigned;
-                                }
-                        }
-                        
                         //if a write
                         if(receiver.intData[0] == 1){
                                 //make dirtybit 1
+                                if(isPagePresent == 1){
+                                        frameTable[processTable[selected].pageTable[pageIndex]].dirtyBit = 1;
+                                        //add some time
+                                        
+                                        //send message back
+                                        messenger.mtype = processTable[selected].pid;
+                                        messenger.intData[0] = 1;
+                                        if (msgsnd(msqid, &messenger, sizeof(msgbuffer)-sizeof(long), 0) == -1) {
+                                                perror("msgsnd to child 1 failed\n");
+                                                exit(1);
+                                        }
+                                }else if(isPagePresent == 0){
+                                        //blocked wait event
+                                        processTable[selected].isWaiting = 1;
+                                        processTable[selected].eventPage = pageIndex;
+                                        processTable[selected].eventRorW = 1;
+                                        processTable[selected].eventNano = sharedTime[1] + 14000000;
+                                        processTable[selected].eventSec = sharedTime[0];
+                                        if(processTable[selected].eventNano >= 1000000000){
+                                                processTable[selected].eventNano = processTable[selected].eventNano - 1000000000;
+                                                processTable[selected].eventSec += 1;
+                                        }
+                                        
+                                }
                         //if a read
                         }else if(receiver.intData[0] == 0){
-                               
+                                if(isPagePresent == 1){
+                                        //add some time
+                                        //send message back
+                                        messenger.mtype = processTable[selected].pid;
+                                        messenger.intData[0] = 1;
+                                        if (msgsnd(msqid, &messenger, sizeof(msgbuffer)-sizeof(long), 0) == -1) {
+                                                perror("msgsnd to child 1 failed\n");
+                                                exit(1);
+                                        }
+                                }else if(isPagePresent == 0){
+                                        //blocked wait event
+                                        processTable[selected].isWaiting = 1;
+                                        processTable[selected].eventPage = pageIndex;
+                                        processTable[selected].eventRorW = 0;
+                                        processTable[selected].eventNano = sharedTime[1] + 14000000;
+                                        processTable[selected].eventSec = sharedTime[0];
+                                        if(processTable[selected].eventNano >= 1000000000){
+                                                processTable[selected].eventNano = processTable[selected].eventNano - 1000000000;
+                                                processTable[selected].eventSec += 1;
+                                        }
+                                }
                         }else{
                                 printf("Something weird was given by process %d\n", selected);
                                 return EXIT_FAILURE;
@@ -423,21 +457,7 @@ int main(int argc, char** argv) {
 
                 //every half second, output resource table and PCB, maybe the other matrix's too
                 if (halfSecCounter >= 500000000 && verbose != 1){
-                        displayTable(totalLaunched, processTable, file);
-                        //display matrices
-                        printf("Total Allocation Array:\n");
-                        fprintf(file,"Total Allocation Array:\n");
-                        for(int x = 0; x < 10; x++){
-                                printf("%2d ", allocatedResourceArray[x]);
-                                fprintf(file,"%2d ", allocatedResourceArray[x]);
-                        }
-                        printf("\nAllocation Matrix:\n");
-                        fprintf(file,"\nAllocation Matrix:\n");
-                        displayMatrix(totalLaunched, allocationMatrix, file);
-                        printf("Request Matrix:\n");
-                        fprintf(file,"Request Matrix:\n");
-                        displayMatrix(totalLaunched, requestMatrix, file);
-                        halfSecCounter = 0;
+                        
                 }   
         }
 

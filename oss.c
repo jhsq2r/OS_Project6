@@ -51,32 +51,48 @@ struct PCB {
         int startSeconds;
         int startNano;
         int isWaiting;
-        int lastRequest;
+        int eventSec;
+        int eventNano;
+        int pageTable[32];
 };
 
-void displayTable(int i, struct PCB *processTable, FILE *file){
-        fprintf(file,"Process Table:\nEntry Occupied PID        StartS StartN Waiting\n");
-        printf("Process Table:\nEntry Occupied PID      StartS StartN Waiting\n");
+struct fTable {
+        int processNum;
+        int page;
+        int dirtyBit;
+        int assigned;
+};
+
+void displayPCB(int i, struct PCB *processTable, FILE *file){
+        fprintf(file,"Process Table:\nEntry Occupied PID      StartS StartN Waiting    EventSec EventNano Frames 0-31\n");
+        printf("Process Table:\nEntry Occupied PID      StartS StartN Frames 0-31\n");
         for (int x = 0; x < i; x++){
-                fprintf(file,"%d        %d      %d      %d      %d      %d\n",x,processTable[x].occupied,processTable[x].pid,processTable[x].startSeconds,processTable[x].startNano,processTable[x].isWaiting);
-                printf("%d      %d      %d      %d      %d      %d\n", x,processTable[x].occupied,processTable[x].pid,processTable[x].startSeconds,processTable[x].startNano,processTable[x].isWaiting);
-
-        }
-}
-
-void displayMatrix(int total, int matrix[20][10], FILE *file){
-        for (int i = 0; i < total; i++){
-                for (int j = 0; j < 10; j++){
-                        printf("%2d ", matrix[i][j]); // Adjust the width as needed
-                        fprintf(file,"%2d ", matrix[i][j]);
+                fprintf(file,"%d        %d      %d      %d      %d      %d        %d        %d",x,processTable[x].occupied,processTable[x].pid,processTable[x].startSeconds,processTable[x].startNano,processTable[x].isWaiting,processTable[x].eventSec,processTable[x].eventNano);
+                printf("%d      %d      %d      %d      %d      %d        %d        %d", x,processTable[x].occupied,processTable[x].pid,processTable[x].startSeconds,processTable[x].startNano,processTable[x].isWaiting,processTable[x].eventSec,processTable[x].eventNano);
+                for(int y = 0; y < 32; y++){
+                        if(y == 15){ printf("\n"); fprintf(file,"\n");}
+                        printf("%3d ", processTable[x].pageTable[y]);
+                        fprintf(file,"%3d ", processTable[x].pageTable[y]);
                 }
-                fprintf(file,"\n");
                 printf("\n");
+                fprintf(file,"\n");
         }
 }
 
-void updateTime(int *sharedTime){
-        sharedTime[1] = sharedTime[1] + 100000;
+void displayFrameTable(struct fTable frameTable*, FILE *file){
+        fprintf(file,"Frame Table: ([ProcessNum, Page][DirtyBit][Assigned])\n");
+        printf("Frame table: ([ProcessNum, Page][DirtyBit][Assigned])\n");
+        for(int x = 0; x < 256; x++){
+                if(x == 31 || x == 63 || x == 95 || x == 127 || x == 159 || x == 191 || x == 223){ printf("\n"); fprintf(file,"\n");}
+                printf("[%d, %d][%d][%d] ", frameTable[x].processNum, frameTable[x].page, frameTable[x].dirtyBit, frameTable[x].assigned);
+                fprintf(file,"[%d, %d][%d][%d] ", frameTable[x].processNum, frameTable[x].page, frameTable[x].dirtyBit, frameTable[x].assigned);
+        }
+        printf("\n");
+        fprintf(file,"\n");
+}
+
+void updateTime(int *sharedTime, amount){
+        sharedTime[1] = sharedTime[1] + amount;
         if (sharedTime[1] >= 1000000000 ){
                 sharedTime[0] = sharedTime[0] + 1;
                 sharedTime[1] = sharedTime[1] - 1000000000;
@@ -88,52 +104,6 @@ void help(){
         printf("This program will not run without these paramters being provided, do not set n over 20\nThis program simulates children asking for resources, deadlock detection, and deadlock resolution\n");
         printf("This program also takes in a paramter -v 1 if you want to just see output from deadlocks\n");
 }
-
-int deadlockDetection(int totalLaunched, int aloMatrix[20][10], int reqMatrix[20][10], int aloArray[10]){
-        int i, j;
-        int work[10];
-        int finish[totalLaunched];
-        int safe_sequence[totalLaunched];
-        int num_finished = 0;
-
-        for(i = 0; i < 10; i++){
-                work[i] = aloArray[i];
-        }
-
-        for(i = 0; i < totalLaunched; i++){
-                finish[i] = 0;
-        }
-
-        while(num_finished < totalLaunched){
-                int found = 0;
-                for (i = 0; i < totalLaunched; i++){
-                        if(!finish[i]){
-                                int can_finish = 1;
-                                for(j = 0; j < 10; j++){
-                                        if(reqMatrix[i][j] > work[j]){
-                                                can_finish = 0;
-                                                break;
-                                        }
-                                }
-                                if(can_finish){
-                                        for(j = 0; j < 10; j++){
-                                                work[j] += aloMatrix[i][j];
-                                        }
-                                        finish[i] = 1;
-                                        safe_sequence[num_finished] = i;
-                                        num_finished++;
-                                        found = 1;
-                                }
-                        }
-                }
-                if(!found){
-                        return 1;
-                }
-        }
-        return 0;
-}
-
-//may need custom data structures for resource management
 
 int main(int argc, char** argv) {
 
@@ -204,10 +174,20 @@ int main(int argc, char** argv) {
         fprintf(file,"Ran with arguments -n %d -s %d -t %d \n", proc,simul,maxTime);
 
 
-        struct PCB processTable[20];
-        for (int y = 0; y < 20; y++){
+        struct PCB processTable[30];
+        for (int y = 0; y < 30; y++){
                 processTable[y].occupied = 0;
                 processTable[y].isWaiting = 0;
+                for(int x = 0; x < 32; x++){
+                processTable[y].pageTable[x] = -1;
+                }
+        }
+        struct fTable frameTable[256];
+        for(int c = 0; c < 256; c++){
+                frameTable[c].processNum = -1;
+                frameTable[c].page = -1;
+                frameTable[c].dirtyBit = -1;//May need editing
+                frameTable[c].assigned = -1;
         }
 
         int totalInSystem = 0;
@@ -218,38 +198,18 @@ int main(int argc, char** argv) {
         nextLaunchTime[0] = 0;
         nextLaunchTime[1] = 0;
         int canLaunch;
-        int requestTrack = 0;
-
-        int requestMatrix[20][10];
-        int allocationMatrix[20][10];
-        for(int x = 0; x < 20; x++){
-                for(int y =0; y < 10; y++){
-                        requestMatrix[x][y] = 0;
-                        allocationMatrix[x][y] = 0;
-                }
-        }
-        int allocatedResourceArray[10];
-        int availableResourceArray[10];
-        for(int x = 0; x < 10; x++){
-                allocatedResourceArray[x] = 0;
-                availableResourceArray[x] = 0;
-        }
-        int canGrant;
-        int selected = 0;
-        int grantedNow = 0;
-        int grantedLater = 0;
+       
         int oneSecCounter = 0;
         int halfSecCounter = 0;
-        int deadlock = 0;
-        int kills = 0;
-        int totalDetections = 0;
+        int framesFilled = 0;
+        int firstOutFrame = -1;
+        int fifoCounter = 0;
 
         while(1){
                 seed++;
                 srand(seed);
                 //printf("Looping...\n");
-                //increment time grab function from project4, function may need editing in terms of time increment
-                updateTime(sharedTime);
+                updateTime(sharedTime, 100000);//add these around
                 oneSecCounter += 100000;
                 halfSecCounter += 100000;
 
@@ -258,11 +218,18 @@ int main(int argc, char** argv) {
                         if (processTable[x].occupied == 1){
                                 if (waitpid(processTable[x].pid, &status, WNOHANG) > 0){
                                         processTable[x].occupied = 0;
-                                        //free resources
-                                        //Edit charts as needed
-                                        for(int y = 0; y < 10; y++){
-                                                allocatedResourceArray[y] -= allocationMatrix[x][y];
-                                                allocationMatrix[x][y] = 0;
+                                        //clear pageTable
+                                        for(int y = 0; y < 32; y++){
+                                                processTable[x].pageTable[y] = -1;
+                                        }
+                                        //clear entries out of frametable
+                                        for(int z = 0; z < 256; z++){
+                                                if(frameTable[z].processNum == x){
+                                                        frameTable[z].processNum = -1;
+                                                        frameTable[z].page = -1;
+                                                        frameTable[z].dirtyBit = -1;//May need editing
+                                                        frameTable[z].assigned = -1;
+                                                }
                                         }
                                         if(verbose != 1){
                                         printf("Master has detected Process P%d has terminated at time %d:%d\n", x,sharedTime[0],sharedTime[1]);
@@ -323,42 +290,31 @@ int main(int argc, char** argv) {
                         //sleep(1);
                 }
 
-                //Check if any request from the request matrix can be fulfilled
-                //increment through the PCB and check if any waiting requests can be fulfilled
-                //printf("CheckPoint 3\n");
+                //check if request can be granted
                 for(int x = 0; x < totalLaunched; x++){
                         if(processTable[x].isWaiting == 1){
-                                canGrant = 1;
-                                for(int y = 0; y < 10; y++){
-                                        if(requestMatrix[x][y] + allocatedResourceArray[y] <= 20){
-                                                canGrant = 1;
+                                if((processTable[x].eventSec < sharedTime[0]) || (processTable[x].eventSec == sharedTime[0] && processTable[x].eventNano <= sharedTime[1])){
+                                        for(int y = 0; y < 256; y++){
+                                                if(frameTable[y].processNum != -1){
+                                                        framesFilled++;
+                                                }
+                                                if(frameTable[y].assigned > -1 && frameTable[y].assigned < firstOutFrame){
+                                                        firstOutFrame = frameTable[y].assigned;
+                                                }
+                                        }
+                                        if(framesFiled == 256){
+                                                //give the firstoutframe to the process
+                                                //add appropriate value to assigned(fifoCounter)
+                                                //message back the waiting process
                                         }else{
-                                                canGrant = 0;
-                                                break;
-                                        }
-                                }
-                                if(canGrant == 1){//If request can be fulfilled, update request matrix-allocation matrix-PCB-resource array-allocation array, then message back
-                                        for(int y = 0; y < 10; y++){
-                                                allocatedResourceArray[y] += requestMatrix[x][y];
-                                                allocationMatrix[x][y] += requestMatrix[x][y];
-                                                requestMatrix[x][y] = 0;
-                                        }
-                                        processTable[x].isWaiting = 0;
-                                        grantedLater++;
-                                        //Send message back to granted process
-                                        messenger.mtype = processTable[x].pid;
-                                        messenger.intData[0] = 1;
-                                        if (msgsnd(msqid, &messenger, sizeof(msgbuffer)-sizeof(long), 0) == -1) {
-                                                perror("msgsnd to child 1 failed\n");
-                                                exit(1);
-                                        }
-                                        if(verbose != 1){
-                                        printf("Master has detected that Process P%d's request can now be granted at time %d:%d\n", x,sharedTime[0],sharedTime[1]);
-                                        fprintf(file, "Master has detected that Process P%d's request can now be granted at time %d:%d\n", x,sharedTime[0],sharedTime[1]);
+                                                //Traverse through and give the first empty frame to process
+                                                //add appropriate value to assigned(fifoCounter)
+                                                //message back the waiting process
                                         }
                                 }
                         }
                 }
+
                 //printf("CheckPoint 4\n");
                 //Dont wait for message, but check
                 if(msgrcv(msqid, &receiver, sizeof(msgbuffer),getpid(),IPC_NOWAIT) == -1){
@@ -451,105 +407,13 @@ int main(int argc, char** argv) {
                         fprintf(file,"Request Matrix:\n");
                         displayMatrix(totalLaunched, requestMatrix, file);
                         halfSecCounter = 0;
-                }
-                //every second, check for deadlock
-                if (oneSecCounter >= 1000000000){
-                        //check for deadlock
-                        printf("Master checking for deadlock at time %d:%d\n", sharedTime[0],sharedTime[1]);
-                        fprintf(file,"Master checking for deadlock at time %d:%d\n", sharedTime[0],sharedTime[1]);
-                        deadlock = -1;
-                        totalDetections++;
-                        for(int x = 0; x < 10; x++){
-                                availableResourceArray[x] = 20 - allocatedResourceArray[x];
-                        }
-                        deadlock = deadlockDetection(totalLaunched, allocationMatrix, requestMatrix, availableResourceArray);
-                        if(deadlock == 1){
-                                printf("Deadlock Detected...\n");
-                                fprintf(file,"Deadlock Detected...\n");
-                                if(verbose == 1){
-                                        displayTable(totalLaunched, processTable, file);
-                                        printf("Total Allocation Array:\n");
-                                        fprintf(file,"Total Allocation Array:\n");
-                                        for(int x = 0; x < 10; x++){
-                                                printf("%2d ", allocatedResourceArray[x]);
-                                                fprintf(file,"%2d ", allocatedResourceArray[x]);
-                                        }
-                                        printf("\nAllocation Matrix:\n");
-                                        fprintf(file,"\nAllocation Matrix:\n");
-                                        displayMatrix(totalLaunched, allocationMatrix, file);
-                                        printf("Request Matrix:\n");
-                                        fprintf(file,"Request Matrix:\n");
-                                        displayMatrix(totalLaunched, requestMatrix, file);
-                                }
-
-                                //sleep(1);
-                                for(int x = 0; x < totalLaunched; x++){
-                                        if(processTable[x].occupied == 1){
-                                                printf("Master terminating Process P%d and freeing its resources at time %d:%d\n", x,sharedTime[0],sharedTime[1]);
-                                                fprintf(file,"Master terminating Process P%d and freeing its resources at time %d:%d\n", x,sharedTime[0],sharedTime[1]);
-                                                processTable[x].occupied = 0;
-                                                kills++;
-                                                for(int y = 0; y < 10; y++){
-                                                        allocatedResourceArray[y] -= allocationMatrix[x][y];
-                                                        availableResourceArray[y] = 20 - allocatedResourceArray[y];
-                                                        allocationMatrix[x][y] = 0;
-                                                        requestMatrix[x][y]=0;
-                                                }
-                                                messenger.mtype = processTable[x].pid;
-                                                messenger.intData[0] = 10;
-                                                if (msgsnd(msqid, &messenger, sizeof(msgbuffer)-sizeof(long), 0) == -1) {
-                                                        perror("msgsnd to child 1 failed\n");
-                                                         exit(1);
-                                                }
-                                                if(deadlockDetection(totalLaunched, allocationMatrix, requestMatrix, availableResourceArray) == 0){
-                                                        printf("Deadlock Solved!\n");
-                                                        fprintf(file,"Deadlock Solved!\n");
-                                                        if(verbose == 1){
-                                                                displayTable(totalLaunched, processTable, file);
-                                                                printf("Total Allocation Array:\n");
-                                                                fprintf(file,"Total Allocation Array:\n");
-                                                                for(int x = 0; x < 10; x++){
-                                                                        printf("%2d ", allocatedResourceArray[x]);
-                                                                        fprintf(file,"%2d ", allocatedResourceArray[x]);
-                                                                }
-                                                                printf("\nAllocation Matrix:\n");
-                                                                fprintf(file,"\nAllocation Matrix:\n");
-                                                                displayMatrix(totalLaunched, allocationMatrix, file);
-                                                                printf("Request Matrix:\n");
-                                                                fprintf(file,"Request Matrix:\n");
-                                                                displayMatrix(totalLaunched, requestMatrix, file);
-                                                        }
-                                                        break;
-                                                }
-                                        }
-                                }
-                                //return EXIT_FAILURE;
-                        }else if(deadlock == 0){
-                                printf("No deadlock detected...\n");
-                                fprintf(file,"No deadlock detected...\n");
-                        }else{
-                                printf("Something weird...\n");
-                                return EXIT_FAILURE;
-                        }
-                        oneSecCounter = 0;
-                }
+                }   
         }
 
         displayTable(proc, processTable, file);
 
         //display stats
-        printf("Total Requests: %d\n", grantedNow+grantedLater);
-        printf("Granted right away: %d\n", grantedNow);
-        printf("Granted after some wait time: %d\n", grantedLater);
-        printf("Number of times deadlock detection was run: %d\n", totalDetections);
-        printf("Processes killed by deadlock removal: %d\n", kills);
-        printf("Processes that died naturally: %d\n", proc-kills);
-        fprintf(file,"Total Requests: %d\n", grantedNow+grantedLater);
-        fprintf(file,"Granted right away: %d\n", grantedNow);
-        fprintf(file,"Granted after some wait time: %d\n", grantedLater);
-        fprintf(file,"Number of times deadlock detection was run: %d\n", totalDetections);
-        fprintf(file,"Processes killed by deadlock removal: %d\n", kills);
-        fprintf(file,"Processes that died naturally: %d\n", proc-kills);
+      
 
 
         shmdt(sharedTime);

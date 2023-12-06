@@ -59,7 +59,7 @@ int main(int argc, char** argv){
                 //printf("PercentChance: %d\n", percentChance);
                 if(percentChance < 40){
                         //write
-                        receiver.intData[0] = 1
+                        receiver.intData[0] = 1;
                 }else{
                         //read
                         receiver.intData[0] = 0;

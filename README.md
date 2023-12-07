@@ -10,4 +10,4 @@ The main process will check if the requested page is in the page table
 If it is not, it will page fault and do a blocked wait until it either populates an empty frame or replaces the Frame at the head of the FIFO queue
 Finally, it will output some stats on the simulation
 
-Repos: https://github.com/jhsq2r/OS_Project5
+Repos: https://github.com/jhsq2r/OS_Project6

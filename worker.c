@@ -43,7 +43,7 @@ int main(int argc, char** argv){
         int seed = rand();
         int randomNum;
         int percentChance;
-        int numMemReferences = 0;
+        int numMemReferences = 1;
 
         while (1){
                 if(numMemReferences % 1000 == 0){

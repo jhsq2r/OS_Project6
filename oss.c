@@ -69,8 +69,8 @@ void displayPCB(int i, struct PCB *processTable, FILE *file){
         fprintf(file,"Process Table:\nEntry Occupied PID      StartS StartN Waiting    EventSec EventNano Frames 0-31\n");
         printf("Process Table:\nEntry Occupied PID      StartS StartN Frames 0-31\n");
         for (int x = 0; x < i; x++){
-                fprintf(file,"%d        %d      %d      %d      %d      %d        %d        %d ",x,processTable[x].occupied,processTable[x].pid,processTable[x].startSeconds,processTable[x].startNano,processTable[x].isWaiting,processTable[x].eventSec,processTable[x].eventNano);
-                printf("%d      %d      %d      %d      %d      %d        %d        %d ", x,processTable[x].occupied,processTable[x].pid,processTable[x].startSeconds,processTable[x].startNano,processTable[x].isWaiting,processTable[x].eventSec,processTable[x].eventNano);
+                fprintf(file,"%d        %d      %d      %d      %d      %d        %d        %d \n",x,processTable[x].occupied,processTable[x].pid,processTable[x].startSeconds,processTable[x].startNano,processTable[x].isWaiting,processTable[x].eventSec,processTable[x].eventNano);
+                printf("%d      %d      %d      %d      %d      %d        %d        %d \n", x,processTable[x].occupied,processTable[x].pid,processTable[x].startSeconds,processTable[x].startNano,processTable[x].isWaiting,processTable[x].eventSec,processTable[x].eventNano);
                 for(int y = 0; y < 32; y++){
                         if(y == 15){ printf("\n"); fprintf(file,"\n");}
                         printf("%3d ", processTable[x].pageTable[y]);
@@ -81,19 +81,19 @@ void displayPCB(int i, struct PCB *processTable, FILE *file){
         }
 }
 
-void displayFrameTable(struct fTable frameTable*, FILE *file){
+void displayFrameTable(struct fTable *frameTable, FILE *file){
         fprintf(file,"Frame Table: ([ProcessNum, Page][DirtyBit][Assigned])\n");
         printf("Frame table: ([ProcessNum, Page][DirtyBit][Assigned])\n");
         for(int x = 0; x < 256; x++){
-                if(x == 31 || x == 63 || x == 95 || x == 127 || x == 159 || x == 191 || x == 223){ printf("\n"); fprintf(file,"\n");}
-                printf("[%d, %d][%d][%d] ", frameTable[x].processNum, frameTable[x].page, frameTable[x].dirtyBit, frameTable[x].assigned);
-                fprintf(file,"[%d, %d][%d][%d] ", frameTable[x].processNum, frameTable[x].page, frameTable[x].dirtyBit, frameTable[x].assigned);
+                if(((x+1)%8) == 0){ printf("\n"); fprintf(file,"\n");}
+                printf("%d:[%d, %d][%d][%d] ", x,frameTable[x].processNum, frameTable[x].page, frameTable[x].dirtyBit, frameTable[x].assigned);
+                fprintf(file,"%d:[%d, %d][%d][%d] ",x, frameTable[x].processNum, frameTable[x].page, frameTable[x].dirtyBit, frameTable[x].assigned);
         }
         printf("\n");
         fprintf(file,"\n");
 }
 
-void updateTime(int *sharedTime, amount){
+void updateTime(int *sharedTime, int amount){
         sharedTime[1] = sharedTime[1] + amount;
         if (sharedTime[1] >= 1000000000 ){
                 sharedTime[0] = sharedTime[0] + 1;
@@ -103,8 +103,7 @@ void updateTime(int *sharedTime, amount){
 
 void help(){
         printf("This program is designed to take in 4 parameters: \n-n [num processes to launch]\n-s [num that can run at once]\n-t [time in nanoseconds between launches]\n-f [file to write log]\n");
-        printf("This program will not run without these paramters being provided, do not set n over 20\nThis program simulates children asking for resources, deadlock detection, and deadlock resolution\n");
-        printf("This program also takes in a paramter -v 1 if you want to just see output from deadlocks\n");
+        printf("This program will not run without these paramters being provided, do not set n over 20\nThis program simulates children making requests for memory in their page tables, the program will then check the frame table to see if the page is present.This program keeps track of page faults aswell.\n");
 }
 
 int main(int argc, char** argv) {
@@ -201,7 +200,7 @@ int main(int argc, char** argv) {
         nextLaunchTime[0] = 0;
         nextLaunchTime[1] = 0;
         int canLaunch;
-       
+
         int halfSecCounter = 0;
         int framesFilled = 0;
         int firstOutFrame = -1;
@@ -209,6 +208,11 @@ int main(int argc, char** argv) {
         int selected;
         int pageIndex = 0;
         int isPagePresent = 0;
+        int totalRequests = 0;
+        int totalPageFaults = 0;
+        int totalReads = 0;
+        int totalWrites = 0;
+        int totalReplacements = 0;
 
         while(1){
                 seed++;
@@ -216,8 +220,9 @@ int main(int argc, char** argv) {
                 //printf("Looping...\n");
                 updateTime(sharedTime, 100000);//add these around
                 halfSecCounter += 100000;
-
+                //sleep(1);
                 //check if process has terminated
+                //printf("Checkpoint 1\n");
                 for (int x = 0; x < totalLaunched; x++){
                         if (processTable[x].occupied == 1){
                                 if (waitpid(processTable[x].pid, &status, WNOHANG) > 0){
@@ -289,12 +294,13 @@ int main(int argc, char** argv) {
                                 processTable[totalLaunched].pid = child_pid;
                                 processTable[totalLaunched].startSeconds = sharedTime[0];
                                 processTable[totalLaunched].startNano = sharedTime[1];
-                                //printf("Generating process with PID %d at time %d:%d\n",child_pid,sharedTime[0],sharedTime[1]);
-                                //fprintf(file,"Generating process with PID %d at time %d:%d\n",child_pid,sharedTime[0],sharedTime[1]);
+                                printf("Generating process with PID %d at time %d:%d\n",child_pid,sharedTime[0],sharedTime[1]);
+                                fprintf(file,"Generating process with PID %d at time %d:%d\n",child_pid,sharedTime[0],sharedTime[1]);
                         }
                         totalLaunched++;
                         //sleep(1);
                 }
+                //printf("Checkpoint 2\n");
                 updateTime(sharedTime, 15000);
                 halfSecCounter += 15000;
                 //check if request can be granted
@@ -302,6 +308,7 @@ int main(int argc, char** argv) {
                         if(processTable[x].isWaiting == 1){
                                 if((processTable[x].eventSec < sharedTime[0]) || (processTable[x].eventSec == sharedTime[0] && processTable[x].eventNano <= sharedTime[1])){
                                         framesFilled = 0;
+                                        firstOutFrame = 1000000000;
                                         for(int y = 0; y < 256; y++){
                                                 if(frameTable[y].processNum != -1){
                                                         framesFilled++;
@@ -309,28 +316,36 @@ int main(int argc, char** argv) {
                                                 if(frameTable[y].assigned > -1 && frameTable[y].assigned < firstOutFrame){
                                                         firstOutFrame = frameTable[y].assigned;
                                                 }
+                                                //printf("Next to be replaced: %d",firstOutFrame);
                                         }
-                                        if(framesFiled == 256){
+                                        //printf("Checkpoint 2.1\n");
+                                        if(framesFilled == 256){
+                                                //displayPCB(totalLaunched, processTable,file);
+                                                //displayFrameTable(frameTable, file);
+                                                //sleep(30);
                                                 //give the firstoutframe to the process
                                                 for(int z = 0; z < 256; z++){
                                                         if(frameTable[z].assigned == firstOutFrame){
                                                                 printf("Replacing frame %d with P%d page %d\n", z, x, processTable[x].eventPage);
+                                                                fprintf(file,"Replacing frame %d with P%d page %d\n", z, x, processTable[x].eventPage);
                                                                 processTable[frameTable[z].processNum].pageTable[frameTable[z].page] = -1;
                                                                 if(frameTable[z].dirtyBit == 1){
                                                                         //add extra time
                                                                         printf("Dirty bit checked in frame %d, adding extra time...\n",z);
+                                                                        fprintf(file,"Dirty bit checked in frame %d, adding extra time...\n",z);
                                                                         updateTime(sharedTime, 200000);
                                                                         halfSecCounter += 200000;
                                                                 }
                                                                 frameTable[z].processNum = x;
                                                                 frameTable[z].page = processTable[x].eventPage;
-                                                                if(process[x].eventRorW == 1){
+                                                                if(processTable[x].eventRorW == 1){
                                                                         frameTable[z].dirtyBit = 1;
                                                                 }else{
                                                                         frameTable[z].dirtyBit = 0;
                                                                 }
                                                                 frameTable[z].assigned = fifoCounter;
                                                                 fifoCounter++;
+                                                                processTable[x].pageTable[processTable[x].eventPage] = z;
                                                                 processTable[x].eventSec = 0;
                                                                 processTable[x].eventNano = 0;
                                                                 processTable[x].isWaiting = 0;
@@ -339,29 +354,39 @@ int main(int argc, char** argv) {
                                                                 break;
                                                         }
                                                 }
+                                                //printf("Checkpoint 2.2\n");
                                                 //add appropriate value to assigned(fifoCounter)
                                                 //message back the waiting process
                                                 printf("Indicating to P%d that request has been fufilled\n",x);
+                                                fprintf(file,"Indicating to P%d that request has been fufilled\n",x);
+                                                //displayPCB(totalLaunched, processTable,file);
+                                                //displayFrameTable(frameTable, file);
+                                                //printf("SELECTED SENDING MESSAGE BACK %d\n", x);
+                                                totalRequests++;
+                                                totalReplacements++;
                                                 messenger.mtype = processTable[x].pid;
                                                 messenger.intData[0] = 1;
                                                 if (msgsnd(msqid, &messenger, sizeof(msgbuffer)-sizeof(long), 0) == -1) {
                                                         perror("msgsnd to child 1 failed\n");
                                                         exit(1);
                                                 }
+                                                //printf("Checkpoint 2.3\n");
                                         }else{
                                                 //Traverse through and give the first empty frame to process
                                                 for(int z = 0; z < 256; z++){
                                                         if(frameTable[z].processNum == -1){
                                                                 printf("Granting blocked request, filling frame %d with P%d page %d\n", z, x, processTable[x].eventPage);
+                                                                fprintf(file,"Granting blocked request, filling frame %d with P%d page %d\n", z, x, processTable[x].eventPage);
                                                                 frameTable[z].processNum = x;
                                                                 frameTable[z].page = processTable[x].eventPage;
-                                                                if(process[x].eventRorW == 1){
+                                                                if(processTable[x].eventRorW == 1){
                                                                         frameTable[z].dirtyBit = 1;
                                                                 }else{
                                                                         frameTable[z].dirtyBit = 0;
                                                                 }
                                                                 frameTable[z].assigned = fifoCounter;
                                                                 fifoCounter++;
+                                                                processTable[x].pageTable[processTable[x].eventPage] = z;
                                                                 processTable[x].eventSec = 0;
                                                                 processTable[x].eventNano = 0;
                                                                 processTable[x].isWaiting = 0;
@@ -371,9 +396,12 @@ int main(int argc, char** argv) {
                                                                 break;
                                                         }
                                                 }
+                                                //printf("Checkpoint 2.4\n");
                                                 //add appropriate value to assigned(fifoCounter)
                                                 //message back the waiting process
+                                                totalRequests++;
                                                 printf("Indicating to P%d that request has been fufilled\n",x);
+                                                fprintf(file,"Indicating to P%d that request has been fufilled\n",x);
                                                 messenger.mtype = processTable[x].pid;
                                                 messenger.intData[0] = 1;
                                                 if (msgsnd(msqid, &messenger, sizeof(msgbuffer)-sizeof(long), 0) == -1) {
@@ -384,7 +412,7 @@ int main(int argc, char** argv) {
                                 }
                         }
                 }
-
+                //printf("Checkpoint 3\n");
                 //printf("CheckPoint 4\n");
                 //Dont wait for message, but check
                 if(msgrcv(msqid, &receiver, sizeof(msgbuffer),getpid(),IPC_NOWAIT) == -1){
@@ -417,19 +445,24 @@ int main(int argc, char** argv) {
                         }else{
                                 isPagePresent = 0;
                         }
-                        
+
                         //if a write
                         if(receiver.intData[0] == 1){
                                 printf("P%d requesting write of address %d at time %d:%d\n",selected,receiver.intData[1],sharedTime[0],sharedTime[1]);
+                                fprintf(file,"P%d requesting write of address %d at time %d:%d\n",selected,receiver.intData[1],sharedTime[0],sharedTime[1]);
                                 //make dirtybit 1
                                 if(isPagePresent == 1){
                                         printf("Address %d in frame %d, writing at time %d:%d\n",receiver.intData[1],processTable[selected].pageTable[pageIndex],sharedTime[0],sharedTime[1]);
+                                        fprintf(file,"Address %d in frame %d, writing at time %d:%d\n",receiver.intData[1],processTable[selected].pageTable[pageIndex],sharedTime[0],sharedTime[1]);
                                         frameTable[processTable[selected].pageTable[pageIndex]].dirtyBit = 1;
                                         //add some time
                                         updateTime(sharedTime, 10000);
                                         halfSecCounter += 10000;
                                         //send message back
+                                        totalWrites++;
+                                        totalRequests++;
                                         printf("Indicating to P%d that request has been fufilled\n",selected);
+                                        fprintf(file,"Indicating to P%d that request has been fufilled\n",selected);
                                         messenger.mtype = processTable[selected].pid;
                                         messenger.intData[0] = 1;
                                         if (msgsnd(msqid, &messenger, sizeof(msgbuffer)-sizeof(long), 0) == -1) {
@@ -438,7 +471,9 @@ int main(int argc, char** argv) {
                                         }
                                 }else if(isPagePresent == 0){
                                         //blocked wait event
+                                        totalPageFaults++;
                                         printf("Pagefault, adding wait event to P%d\n", selected);
+                                        fprintf(file,"Pagefault, adding wait event to P%d\n", selected);
                                         processTable[selected].isWaiting = 1;
                                         processTable[selected].eventPage = pageIndex;
                                         processTable[selected].eventRorW = 1;
@@ -450,18 +485,23 @@ int main(int argc, char** argv) {
                                         }
                                         updateTime(sharedTime, 10000);
                                         halfSecCounter += 10000;
-                                        
+
                                 }
                         //if a read
                         }else if(receiver.intData[0] == 0){
                                 printf("P%d requesting read of address %d at time %d:%d\n",selected,receiver.intData[1],sharedTime[0],sharedTime[1]);
+                                fprintf(file,"P%d requesting read of address %d at time %d:%d\n",selected,receiver.intData[1],sharedTime[0],sharedTime[1]);
                                 if(isPagePresent == 1){
                                         printf("Address %d in frame %d, reading at time %d:%d\n",receiver.intData[1],processTable[selected].pageTable[pageIndex],sharedTime[0],sharedTime[1]);
+                                        fprintf(file,"Address %d in frame %d, reading at time %d:%d\n",receiver.intData[1],processTable[selected].pageTable[pageIndex],sharedTime[0],sharedTime[1]);
                                         //add some time
                                         updateTime(sharedTime, 10000);
                                         halfSecCounter += 10000;
                                         //send message back
+                                        totalReads++;
+                                        totalRequests++;
                                         printf("Indicating to P%d that request has been fufilled\n",selected);
+                                        fprintf(file,"Indicating to P%d that request has been fufilled\n",selected);
                                         messenger.mtype = processTable[selected].pid;
                                         messenger.intData[0] = 1;
                                         if (msgsnd(msqid, &messenger, sizeof(msgbuffer)-sizeof(long), 0) == -1) {
@@ -470,7 +510,9 @@ int main(int argc, char** argv) {
                                         }
                                 }else if(isPagePresent == 0){
                                         //blocked wait event
+                                        totalPageFaults++;
                                         printf("Pagefault, adding wait event to P%d\n", selected);
+                                        fprintf(file,"Pagefault, adding wait event to P%d\n", selected);
                                         processTable[selected].isWaiting = 1;
                                         processTable[selected].eventPage = pageIndex;
                                         processTable[selected].eventRorW = 0;
@@ -488,19 +530,31 @@ int main(int argc, char** argv) {
                                 return EXIT_FAILURE;
                         }
                 }
-
+                //printf("Checkpoint 4\n");
                 //every half second, output resource table and PCB, maybe the other matrix's too
                 if (halfSecCounter >= 500000000 && verbose != 1){
                         displayPCB(totalLaunched,processTable,file);
                         displayFrameTable(frameTable, file);
+                        //sleep(30);
                         halfSecCounter = 0;
-                }   
+                }
         }
 
-        displayTable(proc, processTable, file);
+        displayPCB(proc, processTable, file);
+        displayFrameTable(frameTable, file);
+        printf("Total Requests: %d\n", totalRequests);
+        printf("Total Page Faults: %d\n", totalPageFaults);
+        printf("Total Immediate Reads: %d\n", totalReads);
+        printf("Total Immediate Writes: %d\n", totalWrites);
+        printf("Total Frames Replaced by FIFO: %d\n", totalReplacements);
+        fprintf(file,"Total Requests: %d\n", totalRequests);
+        fprintf(file,"Total Page Faults: %d\n", totalPageFaults);
+        fprintf(file,"Total Immediate Reads: %d\n", totalReads);
+        fprintf(file,"Total Immediate Writes: %d\n", totalWrites);
+        fprintf(file,"Total Frames Replaced by FIFO: %d\n", totalReplacements);
 
         //display stats
-      
+
 
 
         shmdt(sharedTime);
@@ -516,3 +570,4 @@ int main(int argc, char** argv) {
 
         return 0;
 }
+
